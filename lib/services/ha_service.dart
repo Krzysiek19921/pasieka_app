@@ -5,27 +5,21 @@ import '../models/hive_model.dart';
 class HaService {
   final String haUrl = "https://ulekrzyska.duckdns.org:8123";
 
-  // ⚠️ zostawiam Twój token (nie zmieniam)
   final String token =
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxNTY3OTQxMjVlM2I0MDI4YmE4ZGJjMGMwZjQwMjgzNiIsImlhdCI6MTc3OTU2MTA4MywiZXhwIjoyMDk0OTIxMDgzfQ.QOhWE99RyOsWTyAlJ_5cmVPzJVXiOycFy9zBE_XBx8c";
 
-  // --------------------------
-  // 🔧 SAFE GET
-  // --------------------------
-  double _get(List data, String id) {
-    final item = data.firstWhere(
-      (e) => e["entity_id"] == id,
+  // 🔥 SAFE PARSE MAP
+  double _get(List<dynamic> data, String id) {
+    final item = data.cast<Map<String, dynamic>?>().firstWhere(
+      (e) => e?["entity_id"] == id,
       orElse: () => null,
     );
 
     if (item == null) return 0;
 
-    return double.tryParse(item["state"].toString()) ?? 0;
+    return double.tryParse(item["state"]?.toString() ?? "0") ?? 0;
   }
 
-  // --------------------------
-  // 🐝 ULE (waga + delty)
-  // --------------------------
   Future<List<HiveModel>> fetchHives() async {
     final response = await http.get(
       Uri.parse("$haUrl/api/states"),
@@ -39,7 +33,7 @@ class HaService {
       throw Exception("HA error: ${response.statusCode}");
     }
 
-    final List data = jsonDecode(response.body);
+    final List<dynamic> data = jsonDecode(response.body);
 
     return [
       HiveModel(
@@ -72,43 +66,27 @@ class HaService {
     ];
   }
 
-  // --------------------------
-  // 🌡️ TEMPERATURA
-  // --------------------------
   Future<double> fetchHiveTemp() async {
     final response = await http.get(
-      Uri.parse(
-        "$haUrl/api/states/sensor.waga_z_czujnikiem_temperatura_ula",
-      ),
-      headers: {
-        "Authorization": "Bearer $token",
-        "Content-Type": "application/json",
-      },
+      Uri.parse("$haUrl/api/states/sensor.waga_z_czujnikiem_temperatura_ula"),
+      headers: {"Authorization": "Bearer $token"},
     );
 
     if (response.statusCode != 200) return 0;
 
     final data = jsonDecode(response.body);
-    return double.tryParse(data["state"].toString()) ?? 0;
+    return double.tryParse(data["state"]?.toString() ?? "0") ?? 0;
   }
 
-  // --------------------------
-  // 💧 WILGOTNOŚĆ
-  // --------------------------
   Future<double> fetchHiveHumidity() async {
     final response = await http.get(
-      Uri.parse(
-        "$haUrl/api/states/sensor.waga_z_czujnikiem_wilgotnosc_ula",
-      ),
-      headers: {
-        "Authorization": "Bearer $token",
-        "Content-Type": "application/json",
-      },
+      Uri.parse("$haUrl/api/states/sensor.waga_z_czujnikiem_wilgotnosc_ula"),
+      headers: {"Authorization": "Bearer $token"},
     );
 
     if (response.statusCode != 200) return 0;
 
     final data = jsonDecode(response.body);
-    return double.tryParse(data["state"].toString()) ?? 0;
+    return double.tryParse(data["state"]?.toString() ?? "0") ?? 0;
   }
 }
