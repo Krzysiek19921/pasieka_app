@@ -22,6 +22,7 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     "UL1": "sensor.waga_ula_buckfast_1_waga",
     "UL2": "sensor.waga_dwie_belki_waga",
     "UL3": "sensor.waga_z_czujnikiem_waga_ula",
+    "UL4": "sensor.waga_ul_4_waga",
   };
 
   @override
@@ -30,23 +31,21 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     hiveName = ModalRoute.of(context)!.settings.arguments as String;
   }
 
-  // =========================
-  // 📊 DATA
-  // =========================
   Future<List<FlSpot>> fetchHistory(String entityId) async {
     final res = await http.get(
-      Uri.parse(
-        "${service.haUrl}/api/history/period?filter_entity_id=$entityId",
-      ),
+      Uri.parse("${service.haUrl}/api/history/period?filter_entity_id=$entityId"),
       headers: {
         "Authorization": "Bearer ${service.token}",
       },
     );
 
-    if (res.statusCode != 200) return [];
+    if (res.statusCode != 200) {
+      debugPrint("HA ERROR: ${res.body}");
+      return [];
+    }
 
     final List data = jsonDecode(res.body);
-    if (data.isEmpty) return [];
+    if (data.isEmpty || data[0].isEmpty) return [];
 
     final List points = data[0];
 
@@ -57,73 +56,54 @@ class _HiveDetailViewState extends State<HiveDetailView> {
         : now.subtract(const Duration(days: 7));
 
     final filtered = points.where((p) {
-      final t = DateTime.parse(p["last_changed"]);
-      return t.isAfter(cutoff);
+      final t = DateTime.tryParse(p["last_changed"] ?? "");
+      return t != null && t.isAfter(cutoff);
     }).toList();
 
-    filtered.sort((a, b) =>
-        DateTime.parse(a["last_changed"])
-            .compareTo(DateTime.parse(b["last_changed"])));
+    if (filtered.isEmpty) return [];
+
+    filtered.sort((a, b) => DateTime.parse(a["last_changed"])
+        .compareTo(DateTime.parse(b["last_changed"])));
+
+    final base = DateTime.parse(filtered.first["last_changed"]);
 
     return filtered.map<FlSpot>((p) {
       final value = double.tryParse(p["state"].toString()) ?? 0;
-      final time = DateTime.parse(p["last_changed"]).toLocal();
+      final time = DateTime.parse(p["last_changed"]);
 
-      double x = time.millisecondsSinceEpoch.toDouble();
+      final x = time.difference(base).inMinutes.toDouble();
 
       return FlSpot(x, value);
     }).toList();
   }
 
-  // =========================
-  // 📉 Y SCALE (KG)
-  // =========================
-  double _minY(List<FlSpot> spots) {
-    double min = spots.first.y;
-    for (final s in spots) {
-      if (s.y < min) min = s.y;
-    }
-    return min - 0.5;
-  }
+  double _minY(List<FlSpot> spots) =>
+      spots.map((e) => e.y).reduce((a, b) => a < b ? a : b) - 0.5;
 
-  double _maxY(List<FlSpot> spots) {
-    double max = spots.first.y;
-    for (final s in spots) {
-      if (s.y > max) max = s.y;
-    }
-    return max + 0.5;
-  }
+  double _maxY(List<FlSpot> spots) =>
+      spots.map((e) => e.y).reduce((a, b) => a > b ? a : b) + 0.5;
 
-  // =========================
-  // 📈 CHART
-  // =========================
   Widget chart(String entityId) {
     return SizedBox(
       height: 260,
       child: FutureBuilder<List<FlSpot>>(
         future: fetchHistory(entityId),
         builder: (context, snapshot) {
-          if (!snapshot.hasData) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final spots = snapshot.data!;
-          if (spots.isEmpty) {
+          if (!snapshot.hasData || snapshot.data!.isEmpty) {
             return const Center(child: Text("Brak danych"));
           }
 
-          final minX = spots.first.x;
-          final maxX = spots.last.x;
+          final spots = snapshot.data!;
 
           return LineChart(
             LineChartData(
-              gridData: const FlGridData(
-                show: true,
-                drawVerticalLine: false,
-              ),
-
-              minX: minX,
-              maxX: maxX,
+              gridData: const FlGridData(show: true),
+              minX: 0,
+              maxX: spots.last.x,
               minY: _minY(spots),
               maxY: _maxY(spots),
 
@@ -135,16 +115,19 @@ class _HiveDetailViewState extends State<HiveDetailView> {
                   sideTitles: SideTitles(showTitles: false),
                 ),
 
-                // ======================
-                // ⬇️ X AXIS
-                // ======================
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    interval: null,
+
+                    // 🔥 KLUCZ: dynamiczna skala osi
+                    interval: range == "24h"
+                        ? 180 // co 3h
+                        : 1440, // co 1 dzień
+
                     getTitlesWidget: (value, meta) {
-                      final dt =
-                          DateTime.fromMillisecondsSinceEpoch(value.toInt());
+                      final dt = DateTime.now().subtract(
+                        Duration(minutes: (spots.last.x - value).toInt()),
+                      );
 
                       if (range == "24h") {
                         return Text(
@@ -162,19 +145,11 @@ class _HiveDetailViewState extends State<HiveDetailView> {
                   ),
                 ),
 
-                // ======================
-                // ⬆️ Y AXIS (KG)
-                // ======================
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    interval: null,
-                    getTitlesWidget: (value, meta) {
-                      return Text(
-                        "${value.toStringAsFixed(1)} kg",
-                        style: const TextStyle(fontSize: 10),
-                      );
-                    },
+                    getTitlesWidget: (value, meta) =>
+                        Text("${value.toStringAsFixed(1)} kg"),
                   ),
                 ),
               ),
@@ -194,9 +169,6 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     );
   }
 
-  // =========================
-  // UI
-  // =========================
   @override
   Widget build(BuildContext context) {
     final entity = weightMap[hiveName] ?? "";
@@ -217,14 +189,13 @@ class _HiveDetailViewState extends State<HiveDetailView> {
               ),
             ],
           ),
-
           Expanded(
-            child: entity.isNotEmpty
-                ? Padding(
+            child: entity.isEmpty
+                ? const Center(child: Text("Brak ula"))
+                : Padding(
                     padding: const EdgeInsets.all(12),
                     child: chart(entity),
-                  )
-                : const Center(child: Text("Brak ula")),
+                  ),
           ),
         ],
       ),

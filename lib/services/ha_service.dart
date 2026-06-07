@@ -6,34 +6,63 @@ class HaService {
   final String haUrl = "https://ulekrzyska.duckdns.org:8123";
 
   final String token =
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxNTY3OTQxMjVlM2I0MDI4YmE4ZGJjMGMwZjQwMjgzNiIsImlhdCI6MTc3OTU2MTA4MywiZXhwIjoyMDk0OTIxMDgzfQ.QOhWE99RyOsWTyAlJ_5cmVPzJVXiOycFy9zBE_XBx8c";
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxNTY3OTQxMjVlM2I0MDI4YmE4ZGJjMGMwZjQwMjgzNiIsImlhdCI6MTc3OTU2MTA4MywiZXhwIjoyMDk0OTIxMDgzfQ.QOhWE99RyOsWTyAlJ_5cmVPzJVXiOycFy9zBE_XBx8c"; // ⚠️ docelowo przenieś do env
 
-  // 🔥 SAFE PARSE MAP
-  double _get(List<dynamic> data, String id) {
-    final item = data.cast<Map<String, dynamic>?>().firstWhere(
-      (e) => e?["entity_id"] == id,
-      orElse: () => null,
-    );
-
-    if (item == null) return 0;
-
-    return double.tryParse(item["state"]?.toString() ?? "0") ?? 0;
-  }
-
-  Future<List<HiveModel>> fetchHives() async {
+  // =========================
+  // FETCH STATES (1 REQUEST)
+  // =========================
+  Future<List<dynamic>> _fetchStates() async {
     final response = await http.get(
       Uri.parse("$haUrl/api/states"),
       headers: {
         "Authorization": "Bearer $token",
         "Content-Type": "application/json",
       },
-    );
+    ).timeout(const Duration(seconds: 10));
 
     if (response.statusCode != 200) {
-      throw Exception("HA error: ${response.statusCode}");
+      return [];
     }
 
-    final List<dynamic> data = jsonDecode(response.body);
+    return jsonDecode(response.body);
+  }
+
+  // =========================
+  // SAFE PARSE
+  // =========================
+  double _get(List<dynamic> data, String id) {
+    try {
+      final item = data.cast<Map<String, dynamic>>().firstWhere(
+            (e) => e["entity_id"] == id,
+            orElse: () => {},
+          );
+
+      if (item.isEmpty) return 0;
+
+      return double.tryParse(item["state"].toString()) ?? 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  // =========================
+  // GLOBAL ULA SENSORS
+  // =========================
+  Future<double> fetchGlobalTemp() async {
+    final data = await _fetchStates();
+    return _get(data, "sensor.waga_z_czujnikiem_temperatura_ula");
+  }
+
+  Future<double> fetchGlobalHumidity() async {
+    final data = await _fetchStates();
+    return _get(data, "sensor.waga_z_czujnikiem_wilgotnosc_ula");
+  }
+
+  // =========================
+  // HIVE LIST (UL1–UL4)
+  // =========================
+  Future<List<HiveModel>> fetchHives() async {
+    final data = await _fetchStates();
 
     return [
       HiveModel(
@@ -63,30 +92,33 @@ class HaService {
         delta8h: _get(data, "sensor.ul3_8h_delta"),
         delta24h: _get(data, "sensor.ul3_24h_delta"),
       ),
+      HiveModel(
+        name: "UL4",
+        weightEntity: "sensor.waga_ul_4_waga",
+        delta8hEntity: "sensor.ul4_8h_delta",
+        delta24hEntity: "sensor.ul4_24h_delta",
+        weight: _get(data, "sensor.waga_ul_4_waga"),
+        delta8h: _get(data, "sensor.ul4_8h_delta"),
+        delta24h: _get(data, "sensor.ul4_24h_delta"),
+      ),
     ];
   }
 
+  // =========================
+  // UL4 SENSORS
+  // =========================
   Future<double> fetchHiveTemp() async {
-    final response = await http.get(
-      Uri.parse("$haUrl/api/states/sensor.waga_z_czujnikiem_temperatura_ula"),
-      headers: {"Authorization": "Bearer $token"},
-    );
-
-    if (response.statusCode != 200) return 0;
-
-    final data = jsonDecode(response.body);
-    return double.tryParse(data["state"]?.toString() ?? "0") ?? 0;
+    final data = await _fetchStates();
+    return _get(data, "sensor.waga_ul_4_temperatura_ula_4");
   }
 
   Future<double> fetchHiveHumidity() async {
-    final response = await http.get(
-      Uri.parse("$haUrl/api/states/sensor.waga_z_czujnikiem_wilgotnosc_ula"),
-      headers: {"Authorization": "Bearer $token"},
-    );
+    final data = await _fetchStates();
+    return _get(data, "sensor.waga_ul_4_wilgotnosc_ula_4");
+  }
 
-    if (response.statusCode != 200) return 0;
-
-    final data = jsonDecode(response.body);
-    return double.tryParse(data["state"]?.toString() ?? "0") ?? 0;
+  Future<double> fetchHivePressure() async {
+    final data = await _fetchStates();
+    return _get(data, "sensor.waga_ul_4_cisnienie_ula_4");
   }
 }
