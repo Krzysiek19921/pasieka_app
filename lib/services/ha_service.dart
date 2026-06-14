@@ -8,8 +8,8 @@ class HaService {
   final String token =
       "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiIxNTY3OTQxMjVlM2I0MDI4YmE4ZGJjMGMwZjQwMjgzNiIsImlhdCI6MTc3OTU2MTA4MywiZXhwIjoyMDk0OTIxMDgzfQ.QOhWE99RyOsWTyAlJ_5cmVPzJVXiOycFy9zBE_XBx8c"; // ⚠️ docelowo przenieś do env
 
-  // =========================
-  // FETCH STATES (1 REQUEST)
+   // =========================
+  // FETCH STATES
   // =========================
   Future<List<dynamic>> _fetchStates() async {
     final response = await http.get(
@@ -46,79 +46,129 @@ class HaService {
   }
 
   // =========================
-  // GLOBAL ULA SENSORS
-  // =========================
-  Future<double> fetchGlobalTemp() async {
-    final data = await _fetchStates();
-    return _get(data, "sensor.waga_z_czujnikiem_temperatura_ula");
-  }
-
-  Future<double> fetchGlobalHumidity() async {
-    final data = await _fetchStates();
-    return _get(data, "sensor.waga_z_czujnikiem_wilgotnosc_ula");
-  }
-
-  // =========================
-  // HIVE LIST (UL1–UL4)
+  // HIVES
   // =========================
   Future<List<HiveModel>> fetchHives() async {
     final data = await _fetchStates();
 
     return [
+      // =========================
+      // UL1
+      // =========================
       HiveModel(
         name: "UL1",
         weightEntity: "sensor.waga_ula_buckfast_1_waga",
         delta8hEntity: "sensor.ul1_8h_delta",
         delta24hEntity: "sensor.ul1_24h_delta",
+
         weight: _get(data, "sensor.waga_ula_buckfast_1_waga"),
         delta8h: _get(data, "sensor.ul1_8h_delta"),
         delta24h: _get(data, "sensor.ul1_24h_delta"),
       ),
+
+      // =========================
+      // UL2
+      // =========================
       HiveModel(
         name: "UL2",
         weightEntity: "sensor.waga_dwie_belki_waga",
         delta8hEntity: "sensor.ul2_8h_delta",
         delta24hEntity: "sensor.ul2_24h_delta",
+
         weight: _get(data, "sensor.waga_dwie_belki_waga"),
         delta8h: _get(data, "sensor.ul2_8h_delta"),
         delta24h: _get(data, "sensor.ul2_24h_delta"),
       ),
+
+      // =========================
+      // UL3
+      // =========================
       HiveModel(
         name: "UL3",
+
         weightEntity: "sensor.waga_z_czujnikiem_waga_ula",
         delta8hEntity: "sensor.ul3_8h_delta",
         delta24hEntity: "sensor.ul3_24h_delta",
+
+        tempEntity: "sensor.waga_z_czujnikiem_temperatura_ula",
+        humidityEntity: "sensor.waga_z_czujnikiem_wilgotnosc_ula",
+
         weight: _get(data, "sensor.waga_z_czujnikiem_waga_ula"),
         delta8h: _get(data, "sensor.ul3_8h_delta"),
         delta24h: _get(data, "sensor.ul3_24h_delta"),
+
+        temp: _get(data, "sensor.waga_z_czujnikiem_temperatura_ula"),
+        humidity: _get(data, "sensor.waga_z_czujnikiem_wilgotnosc_ula"),
       ),
+
+      // =========================
+      // UL4
+      // =========================
       HiveModel(
         name: "UL4",
+
         weightEntity: "sensor.waga_ul_4_waga",
         delta8hEntity: "sensor.ul4_8h_delta",
         delta24hEntity: "sensor.ul4_24h_delta",
+
+        tempEntity: "sensor.waga_ul_4_temperatura_ula_4",
+        humidityEntity: "sensor.waga_ul_4_wilgotnosc_ula_4",
+        pressureEntity: "sensor.waga_ul_4_cisnienie_ula_4",
+
         weight: _get(data, "sensor.waga_ul_4_waga"),
         delta8h: _get(data, "sensor.ul4_8h_delta"),
         delta24h: _get(data, "sensor.ul4_24h_delta"),
+
+        temp: _get(data, "sensor.waga_ul_4_temperatura_ula_4"),
+        humidity: _get(data, "sensor.waga_ul_4_wilgotnosc_ula_4"),
+        pressure: _get(data, "sensor.waga_ul_4_cisnienie_ula_4"),
+      ),
+
+      // =========================
+      // UL5
+      // =========================
+      HiveModel(
+        name: "UL5",
+
+        weightEntity: "sensor.waga_ul_5_waga",
+        delta8hEntity: "sensor.ul5_8h_delta",
+        delta24hEntity: "sensor.ul5_24h_delta",
+
+        tempEntity: "sensor.waga_ul_5_temperatura_ula_5",
+        humidityEntity: "sensor.waga_ul_5_wilgotnosc_ula_5",
+        pressureEntity: "sensor.waga_ul_5_cisnienie_ula_5",
+
+        weight: _get(data, "sensor.waga_ul_5_waga"),
+        delta8h: _get(data, "sensor.ul5_8h_delta"),
+        delta24h: _get(data, "sensor.ul5_24h_delta"),
+
+        temp: _get(data, "sensor.waga_ul_5_temperatura_ula_5"),
+        humidity: _get(data, "sensor.waga_ul_5_wilgotnosc_ula_5"),
+        pressure: _get(data, "sensor.waga_ul_5_cisnienie_ula_5"),
+      ),
+
+      // =========================
+      // UL6
+      // =========================
+      HiveModel(
+        name: "UL6",
+
+        weightEntity: "sensor.waga_ul_6_waga",
+        delta8hEntity: "sensor.ul6_8h_delta",
+        delta24hEntity: "sensor.ul6_24h_delta",
+
+        tempEntity: "sensor.waga_ul_6_temperatura_ula_6",
+        humidityEntity: "sensor.waga_ul_6_wilgotnosc_ula_6",
+        pressureEntity: "sensor.waga_ul_6_cisnienie_ula_6",
+
+        weight: _get(data, "sensor.waga_ul_6_waga"),
+        delta8h: _get(data, "sensor.ul6_8h_delta"),
+        delta24h: _get(data, "sensor.ul6_24h_delta"),
+
+        temp: _get(data, "sensor.waga_ul_6_temperatura_ula_6"),
+        humidity: _get(data, "sensor.waga_ul_6_wilgotnosc_ula_6"),
+        pressure: _get(data, "sensor.waga_ul_6_cisnienie_ula_6"),
       ),
     ];
-  }
-
-  // =========================
-  // UL4 SENSORS
-  // =========================
-  Future<double> fetchHiveTemp() async {
-    final data = await _fetchStates();
-    return _get(data, "sensor.waga_ul_4_temperatura_ula_4");
-  }
-
-  Future<double> fetchHiveHumidity() async {
-    final data = await _fetchStates();
-    return _get(data, "sensor.waga_ul_4_wilgotnosc_ula_4");
-  }
-
-  Future<double> fetchHivePressure() async {
-    final data = await _fetchStates();
-    return _get(data, "sensor.waga_ul_4_cisnienie_ula_4");
   }
 }

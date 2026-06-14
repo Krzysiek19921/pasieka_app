@@ -23,6 +23,8 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     "UL2": "sensor.waga_dwie_belki_waga",
     "UL3": "sensor.waga_z_czujnikiem_waga_ula",
     "UL4": "sensor.waga_ul_4_waga",
+    "UL5": "sensor.waga_ul_5_waga",
+    "UL6": "sensor.waga_ul_6_waga",
   };
 
   @override
@@ -32,8 +34,12 @@ class _HiveDetailViewState extends State<HiveDetailView> {
   }
 
   Future<List<FlSpot>> fetchHistory(String entityId) async {
+    final uri = Uri.parse(
+      "${service.haUrl}/api/history/period?filter_entity_id=$entityId",
+    );
+
     final res = await http.get(
-      Uri.parse("${service.haUrl}/api/history/period?filter_entity_id=$entityId"),
+      uri,
       headers: {
         "Authorization": "Bearer ${service.token}",
       },
@@ -55,21 +61,32 @@ class _HiveDetailViewState extends State<HiveDetailView> {
         ? now.subtract(const Duration(hours: 24))
         : now.subtract(const Duration(days: 7));
 
-    final filtered = points.where((p) {
-      final t = DateTime.tryParse(p["last_changed"] ?? "");
-      return t != null && t.isAfter(cutoff);
-    }).toList();
+    final parsed = points
+        .map((p) {
+          final time = DateTime.tryParse(p["last_changed"] ?? "");
+          final value = double.tryParse(p["state"].toString());
 
-    if (filtered.isEmpty) return [];
+          if (time == null || value == null) return null;
 
-    filtered.sort((a, b) => DateTime.parse(a["last_changed"])
-        .compareTo(DateTime.parse(b["last_changed"])));
+          return {
+            "time": time,
+            "value": value,
+          };
+        })
+        .whereType<Map>()
+        .where((p) => (p["time"] as DateTime).isAfter(cutoff))
+        .toList();
 
-    final base = DateTime.parse(filtered.first["last_changed"]);
+    if (parsed.isEmpty) return [];
 
-    return filtered.map<FlSpot>((p) {
-      final value = double.tryParse(p["state"].toString()) ?? 0;
-      final time = DateTime.parse(p["last_changed"]);
+    parsed.sort((a, b) =>
+        (a["time"] as DateTime).compareTo(b["time"] as DateTime));
+
+    final base = parsed.first["time"] as DateTime;
+
+    return parsed.map<FlSpot>((p) {
+      final time = p["time"] as DateTime;
+      final value = p["value"] as double;
 
       final x = time.difference(base).inMinutes.toDouble();
 
@@ -77,15 +94,19 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     }).toList();
   }
 
-  double _minY(List<FlSpot> spots) =>
-      spots.map((e) => e.y).reduce((a, b) => a < b ? a : b) - 0.5;
+  double _minY(List<FlSpot> spots) {
+    final min = spots.map((e) => e.y).reduce((a, b) => a < b ? a : b);
+    return min - 0.5;
+  }
 
-  double _maxY(List<FlSpot> spots) =>
-      spots.map((e) => e.y).reduce((a, b) => a > b ? a : b) + 0.5;
+  double _maxY(List<FlSpot> spots) {
+    final max = spots.map((e) => e.y).reduce((a, b) => a > b ? a : b);
+    return max + 0.5;
+  }
 
   Widget chart(String entityId) {
     return SizedBox(
-      height: 260,
+      height: 280,
       child: FutureBuilder<List<FlSpot>>(
         future: fetchHistory(entityId),
         builder: (context, snapshot) {
@@ -93,11 +114,11 @@ class _HiveDetailViewState extends State<HiveDetailView> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          final spots = snapshot.data ?? [];
+
+          if (spots.isEmpty) {
             return const Center(child: Text("Brak danych"));
           }
-
-          final spots = snapshot.data!;
 
           return LineChart(
             LineChartData(
@@ -118,12 +139,7 @@ class _HiveDetailViewState extends State<HiveDetailView> {
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-
-                    // 🔥 KLUCZ: dynamiczna skala osi
-                    interval: range == "24h"
-                        ? 180 // co 3h
-                        : 1440, // co 1 dzień
-
+                    interval: range == "24h" ? 180 : 1440,
                     getTitlesWidget: (value, meta) {
                       final dt = DateTime.now().subtract(
                         Duration(minutes: (spots.last.x - value).toInt()),
@@ -171,7 +187,7 @@ class _HiveDetailViewState extends State<HiveDetailView> {
 
   @override
   Widget build(BuildContext context) {
-    final entity = weightMap[hiveName] ?? "";
+    final entity = weightMap[hiveName];
 
     return Scaffold(
       appBar: AppBar(title: Text("🐝 $hiveName")),
@@ -189,9 +205,10 @@ class _HiveDetailViewState extends State<HiveDetailView> {
               ),
             ],
           ),
+
           Expanded(
-            child: entity.isEmpty
-                ? const Center(child: Text("Brak ula"))
+            child: entity == null
+                ? const Center(child: Text("Brak konfiguracji ula"))
                 : Padding(
                     padding: const EdgeInsets.all(12),
                     child: chart(entity),

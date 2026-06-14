@@ -17,13 +17,6 @@ class _HiveDashboardState extends State<HiveDashboard> {
 
   List<HiveModel> hives = [];
 
-  double temp = 0;
-  double humidity = 0;
-
-  double ul4Temp = 0;
-  double ul4Humidity = 0;
-  double ul4Pressure = 0;
-
   @override
   void initState() {
     super.initState();
@@ -37,25 +30,10 @@ class _HiveDashboardState extends State<HiveDashboard> {
     });
 
     try {
-      final results = await Future.wait([
-        service.fetchHives(),
-        service.fetchGlobalTemp(),
-        service.fetchGlobalHumidity(),
-        service.fetchHiveTemp(),
-        service.fetchHiveHumidity(),
-        service.fetchHivePressure(),
-      ]);
+      final data = await service.fetchHives();
 
       setState(() {
-        hives = results[0] as List<HiveModel>;
-
-        temp = results[1] as double;
-        humidity = results[2] as double;
-
-        ul4Temp = results[3] as double;
-        ul4Humidity = results[4] as double;
-        ul4Pressure = results[5] as double;
-
+        hives = data;
         loading = false;
       });
     } catch (e) {
@@ -70,43 +48,6 @@ class _HiveDashboardState extends State<HiveDashboard> {
     if (v < 0) return Colors.red;
     if (v > 0) return Colors.green;
     return Colors.grey;
-  }
-
-  Widget sensors() {
-    return Row(
-      children: [
-        Expanded(
-          child: Card(
-            margin: const EdgeInsets.all(8),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const Text("🌡️ Temperatura (ULA)"),
-                  const SizedBox(height: 5),
-                  Text("${temp.toStringAsFixed(1)} °C"),
-                ],
-              ),
-            ),
-          ),
-        ),
-        Expanded(
-          child: Card(
-            margin: const EdgeInsets.all(8),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  const Text("💧 Wilgotność (ULA)"),
-                  const SizedBox(height: 5),
-                  Text("${humidity.toStringAsFixed(1)} %"),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
   }
 
   Widget hiveCard(HiveModel hive) {
@@ -132,59 +73,45 @@ class _HiveDashboardState extends State<HiveDashboard> {
                   fontWeight: FontWeight.bold,
                 ),
               ),
+
               const SizedBox(height: 8),
-              Text("⚖️ Waga: ${hive.weight} kg"),
-              const SizedBox(height: 6),
+
               Text(
-                "📉 8h: ${hive.delta8h} kg",
-                style: TextStyle(color: _deltaColor(hive.delta8h)),
+                "⚖️ Waga: ${hive.weight.toStringAsFixed(2)} kg",
               ),
+
               Text(
-                "📉 24h: ${hive.delta24h} kg",
-                style: TextStyle(color: _deltaColor(hive.delta24h)),
+                "📉 8h: ${hive.delta8h.toStringAsFixed(2)} kg",
+                style: TextStyle(
+                  color: _deltaColor(hive.delta8h),
+                ),
               ),
+
+              Text(
+                "📉 24h: ${hive.delta24h.toStringAsFixed(2)} kg",
+                style: TextStyle(
+                  color: _deltaColor(hive.delta24h),
+                ),
+              ),
+
+              if (hive.tempEntity != null) ...[
+                const Divider(),
+                Text(
+                  "🌡️ Temperatura: ${hive.temp.toStringAsFixed(1)} °C",
+                ),
+              ],
+
+              if (hive.humidityEntity != null)
+                Text(
+                  "💧 Wilgotność: ${hive.humidity.toStringAsFixed(1)} %",
+                ),
+
+              if (hive.pressureEntity != null)
+                Text(
+                  "🌬️ Ciśnienie: ${hive.pressure.toStringAsFixed(1)} hPa",
+                ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget ul4Card() {
-    final ul4 = hives.where((h) => h.name == "UL4");
-
-    if (ul4.isEmpty) {
-      return const SizedBox(); // 🔥 brak crasha
-    }
-
-    final hive = ul4.first;
-
-    return Card(
-      margin: const EdgeInsets.all(10),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "UL4",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text("⚖️ Waga: ${hive.weight} kg"),
-            Text(
-              "📉 8h: ${hive.delta8h} kg",
-              style: TextStyle(color: _deltaColor(hive.delta8h)),
-            ),
-            Text(
-              "📉 24h: ${hive.delta24h} kg",
-              style: TextStyle(color: _deltaColor(hive.delta24h)),
-            ),
-            const Divider(),
-            Text("🌡️ Temp: ${ul4Temp.toStringAsFixed(1)} °C"),
-            Text("💧 Wilg: ${ul4Humidity.toStringAsFixed(1)} %"),
-            Text("🌬️ Cisn: ${ul4Pressure.toStringAsFixed(1)} hPa"),
-          ],
         ),
       ),
     );
@@ -194,7 +121,9 @@ class _HiveDashboardState extends State<HiveDashboard> {
   Widget build(BuildContext context) {
     if (loading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
       );
     }
 
@@ -202,7 +131,7 @@ class _HiveDashboardState extends State<HiveDashboard> {
       return Scaffold(
         body: Center(
           child: Text(
-            "Błąd ❌\n$error",
+            "Błąd:\n$error",
             textAlign: TextAlign.center,
           ),
         ),
@@ -216,21 +145,14 @@ class _HiveDashboardState extends State<HiveDashboard> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _load,
-          )
-        ],
-      ),
-      body: Column(
-        children: [
-          sensors(),
-          Expanded(
-            child: ListView(
-              children: [
-                ...hives.map(hiveCard),
-                ul4Card(),
-              ],
-            ),
           ),
         ],
+      ),
+      body: RefreshIndicator(
+        onRefresh: _load,
+        child: ListView(
+          children: hives.map(hiveCard).toList(),
+        ),
       ),
     );
   }
