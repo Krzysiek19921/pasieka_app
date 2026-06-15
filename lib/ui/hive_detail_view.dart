@@ -23,8 +23,8 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     "UL2": "sensor.waga_dwie_belki_waga",
     "UL3": "sensor.waga_z_czujnikiem_waga_ula",
     "UL4": "sensor.waga_ul_4_waga",
-    "UL5": "sensor.waga_ul_5_waga",
-    "UL6": "sensor.waga_ul_6_waga",
+    "UL5": "sensor.waga_ul_5_waga_ula",
+    "UL6": "sensor.waga_ul_6_waga_ula",
   };
 
   @override

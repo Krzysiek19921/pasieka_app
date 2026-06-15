@@ -130,7 +130,7 @@ class HaService {
       HiveModel(
         name: "UL5",
 
-        weightEntity: "sensor.waga_ul_5_waga",
+        weightEntity: "sensor.waga_ul_5_waga_ula",
         delta8hEntity: "sensor.ul5_8h_delta",
         delta24hEntity: "sensor.ul5_24h_delta",
 
@@ -138,7 +138,7 @@ class HaService {
         humidityEntity: "sensor.waga_ul_5_wilgotnosc_ula_5",
         pressureEntity: "sensor.waga_ul_5_cisnienie_ula_5",
 
-        weight: _get(data, "sensor.waga_ul_5_waga"),
+        weight: _get(data, "sensor.waga_ul_5_waga_ula"),
         delta8h: _get(data, "sensor.ul5_8h_delta"),
         delta24h: _get(data, "sensor.ul5_24h_delta"),
 
@@ -153,7 +153,7 @@ class HaService {
       HiveModel(
         name: "UL6",
 
-        weightEntity: "sensor.waga_ul_6_waga",
+        weightEntity: "sensor.waga_ul_6_waga_ula",
         delta8hEntity: "sensor.ul6_8h_delta",
         delta24hEntity: "sensor.ul6_24h_delta",
 
@@ -161,7 +161,7 @@ class HaService {
         humidityEntity: "sensor.waga_ul_6_wilgotnosc_ula_6",
         pressureEntity: "sensor.waga_ul_6_cisnienie_ula_6",
 
-        weight: _get(data, "sensor.waga_ul_6_waga"),
+        weight: _get(data, "sensor.waga_ul_6_waga_ula"),
         delta8h: _get(data, "sensor.ul6_8h_delta"),
         delta24h: _get(data, "sensor.ul6_24h_delta"),
 
