@@ -33,10 +33,28 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     hiveName = ModalRoute.of(context)!.settings.arguments as String;
   }
 
-  Future<List<FlSpot>> fetchHistory(String entityId) async {
-    final uri = Uri.parse(
-      "${service.haUrl}/api/history/period?filter_entity_id=$entityId",
-    );
+  // =========================
+  // 🔥 MAIN DATA FETCH (HA STYLE)
+  // =========================
+  Future<List<FlSpot>> fetchData(String entityId) async {
+    final now = DateTime.now();
+    final is24h = range == "24h";
+
+    final start = is24h
+        ? now.subtract(const Duration(hours: 24))
+        : now.subtract(const Duration(days: 7));
+
+    final uri = is24h
+        ? Uri.parse(
+            "${service.haUrl}/api/history/period/${start.toIso8601String()}"
+            "?filter_entity_id=$entityId",
+          )
+        : Uri.parse(
+            "${service.haUrl}/api/statistics/during_period"
+            "?start_time=${start.toIso8601String()}"
+            "&end_time=${now.toIso8601String()}"
+            "&statistic_ids=$entityId",
+          );
 
     final res = await http.get(
       uri,
@@ -51,46 +69,67 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     }
 
     final List data = jsonDecode(res.body);
-    if (data.isEmpty || data[0].isEmpty) return [];
 
-    final List points = data[0];
+    // =========================
+    // 🔵 HISTORY (24h)
+    // =========================
+    if (is24h) {
+      if (data.isEmpty || data[0].isEmpty) return [];
 
-    final now = DateTime.now();
+      final points = data[0] as List;
 
-    final cutoff = range == "24h"
-        ? now.subtract(const Duration(hours: 24))
-        : now.subtract(const Duration(days: 7));
+      final parsed = points.map((p) {
+        final time = DateTime.tryParse(p["last_changed"] ?? "");
+        final value = double.tryParse(p["state"].toString());
 
-    final parsed = points
-        .map((p) {
-          final time = DateTime.tryParse(p["last_changed"] ?? "");
-          final value = double.tryParse(p["state"].toString());
+        if (time == null || value == null) return null;
 
-          if (time == null || value == null) return null;
+        return FlSpot(
+          time.millisecondsSinceEpoch.toDouble(),
+          value,
+        );
+      }).whereType<FlSpot>().toList();
 
-          return {
-            "time": time,
-            "value": value,
-          };
-        })
-        .whereType<Map>()
-        .where((p) => (p["time"] as DateTime).isAfter(cutoff))
-        .toList();
+      return _normalize(parsed);
+    }
 
-    if (parsed.isEmpty) return [];
+    // =========================
+    // 🟣 STATISTICS (7d)
+    // =========================
+    if (data.isEmpty || data[0]["data"] == null) return [];
 
-    parsed.sort((a, b) =>
-        (a["time"] as DateTime).compareTo(b["time"] as DateTime));
+    final points = data[0]["data"] as List;
 
-    final base = parsed.first["time"] as DateTime;
+    final parsed = points.map((p) {
+      final time = DateTime.tryParse(p["start"]);
+      final value = (p["mean"] ?? 0).toDouble();
 
-    return parsed.map<FlSpot>((p) {
-      final time = p["time"] as DateTime;
-      final value = p["value"] as double;
+      if (time == null) return null;
 
-      final x = time.difference(base).inMinutes.toDouble();
+      return FlSpot(
+        time.millisecondsSinceEpoch.toDouble(),
+        value,
+      );
+    }).whereType<FlSpot>().toList();
 
-      return FlSpot(x, value);
+    return _normalize(parsed);
+  }
+
+  // =========================
+  // 🔧 HA NORMALIZATION (IMPORTANT)
+  // =========================
+  List<FlSpot> _normalize(List<FlSpot> data) {
+    if (data.isEmpty) return [];
+
+    data.sort((a, b) => a.x.compareTo(b.x));
+
+    final base = data.first.x;
+
+    return data.map((p) {
+      return FlSpot(
+        (p.x - base) / 60000, // minutes like HA UI
+        p.y,
+      );
     }).toList();
   }
 
@@ -108,7 +147,7 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     return SizedBox(
       height: 280,
       child: FutureBuilder<List<FlSpot>>(
-        future: fetchHistory(entityId),
+        future: fetchData(entityId),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -119,6 +158,10 @@ class _HiveDetailViewState extends State<HiveDetailView> {
           if (spots.isEmpty) {
             return const Center(child: Text("Brak danych"));
           }
+
+          final start = DateTime.now().subtract(
+            Duration(minutes: spots.last.x.toInt()),
+          );
 
           return LineChart(
             LineChartData(
@@ -135,14 +178,13 @@ class _HiveDetailViewState extends State<HiveDetailView> {
                 rightTitles: const AxisTitles(
                   sideTitles: SideTitles(showTitles: false),
                 ),
-
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
                     interval: range == "24h" ? 180 : 1440,
                     getTitlesWidget: (value, meta) {
-                      final dt = DateTime.now().subtract(
-                        Duration(minutes: (spots.last.x - value).toInt()),
+                      final dt = start.add(
+                        Duration(minutes: value.toInt()),
                       );
 
                       if (range == "24h") {
@@ -150,22 +192,23 @@ class _HiveDetailViewState extends State<HiveDetailView> {
                           "${dt.hour}:00",
                           style: const TextStyle(fontSize: 10),
                         );
-                      } else {
-                        const days = ["Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"];
-                        return Text(
-                          days[dt.weekday - 1],
-                          style: const TextStyle(fontSize: 10),
-                        );
                       }
+
+                      const days = ["Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"];
+
+                      return Text(
+                        days[dt.weekday - 1],
+                        style: const TextStyle(fontSize: 10),
+                      );
                     },
                   ),
                 ),
-
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    getTitlesWidget: (value, meta) =>
-                        Text("${value.toStringAsFixed(1)} kg"),
+                    getTitlesWidget: (value, meta) {
+                      return Text("${value.toStringAsFixed(1)} kg");
+                    },
                   ),
                 ),
               ),
@@ -190,7 +233,9 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     final entity = weightMap[hiveName];
 
     return Scaffold(
-      appBar: AppBar(title: Text("🐝 $hiveName")),
+      appBar: AppBar(
+        title: Text("🐝 $hiveName"),
+      ),
       body: Column(
         children: [
           Row(
@@ -205,7 +250,6 @@ class _HiveDetailViewState extends State<HiveDetailView> {
               ),
             ],
           ),
-
           Expanded(
             child: entity == null
                 ? const Center(child: Text("Brak konfiguracji ula"))
