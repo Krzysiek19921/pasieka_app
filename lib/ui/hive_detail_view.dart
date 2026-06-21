@@ -34,197 +34,158 @@ class _HiveDetailViewState extends State<HiveDetailView> {
   }
 
   // =========================
-  // 🔥 MAIN DATA FETCH (HA STYLE)
+  // FETCH DATA (FIXED HA API)
   // =========================
-  Future<List<FlSpot>> fetchData(String entityId) async {
-    final now = DateTime.now();
-    final is24h = range == "24h";
+  Future<_ChartData> fetchData(String entityId) async {
+    final now = DateTime.now().toUtc();
 
-    final start = is24h
+    final start = range == "24h"
         ? now.subtract(const Duration(hours: 24))
         : now.subtract(const Duration(days: 7));
 
-    final uri = is24h
-        ? Uri.parse(
-            "${service.haUrl}/api/history/period/${start.toIso8601String()}"
-            "?filter_entity_id=$entityId",
-          )
-        : Uri.parse(
-            "${service.haUrl}/api/statistics/during_period"
-            "?start_time=${start.toIso8601String()}"
-            "&end_time=${now.toIso8601String()}"
-            "&statistic_ids=$entityId",
-          );
+    final end = now;
+
+    final uri = Uri.parse(
+      "${service.haUrl}/api/history/period/${start.toIso8601String()}"
+      "?end_time=${end.toIso8601String()}"
+      "&filter_entity_id=$entityId",
+    );
+
+    print("========== HA REQUEST ==========");
+    print(uri.toString());
 
     final res = await http.get(
       uri,
-      headers: {
-        "Authorization": "Bearer ${service.token}",
-      },
+      headers: {"Authorization": "Bearer ${service.token}"},
     );
 
+    print("STATUS: ${res.statusCode}");
+
     if (res.statusCode != 200) {
-      debugPrint("HA ERROR: ${res.body}");
-      return [];
+      return _ChartData([], DateTime.now());
     }
 
-    final List data = jsonDecode(res.body);
+    final data = jsonDecode(res.body);
 
-    // =========================
-    // 🔵 HISTORY (24h)
-    // =========================
-    if (is24h) {
-      if (data.isEmpty || data[0].isEmpty) return [];
-
-      final points = data[0] as List;
-
-      final parsed = points.map((p) {
-        final time = DateTime.tryParse(p["last_changed"] ?? "");
-        final value = double.tryParse(p["state"].toString());
-
-        if (time == null || value == null) return null;
-
-        return FlSpot(
-          time.millisecondsSinceEpoch.toDouble(),
-          value,
-        );
-      }).whereType<FlSpot>().toList();
-
-      return _normalize(parsed);
+    if (data is! List || data.isEmpty) {
+      return _ChartData([], DateTime.now());
     }
 
     // =========================
-    // 🟣 STATISTICS (7d)
+    // SAFE PARSING (NO OVERFLATTEN BUG)
     // =========================
-    if (data.isEmpty || data[0]["data"] == null) return [];
+    final List<_Point> points = [];
 
-    final points = data[0]["data"] as List;
+    for (final entityBlock in data) {
+      if (entityBlock is! List) continue;
 
-    final parsed = points.map((p) {
-      final time = DateTime.tryParse(p["start"]);
-      final value = (p["mean"] ?? 0).toDouble();
+      for (final item in entityBlock) {
+        if (item is! Map) continue;
 
-      if (time == null) return null;
+        final state = item["state"];
+        final timeStr = item["last_changed"];
 
+        final time = DateTime.tryParse(timeStr ?? "")?.toLocal();
+        final value = double.tryParse(state.toString());
+
+        if (time == null || value == null) continue;
+
+        points.add(_Point(time, value));
+      }
+    }
+
+    if (points.isEmpty) {
+      return _ChartData([], DateTime.now());
+    }
+
+    points.sort((a, b) => a.time.compareTo(b.time));
+
+    final base = points.first.time;
+
+    final spots = points.map((p) {
       return FlSpot(
-        time.millisecondsSinceEpoch.toDouble(),
-        value,
-      );
-    }).whereType<FlSpot>().toList();
-
-    return _normalize(parsed);
-  }
-
-  // =========================
-  // 🔧 HA NORMALIZATION (IMPORTANT)
-  // =========================
-  List<FlSpot> _normalize(List<FlSpot> data) {
-    if (data.isEmpty) return [];
-
-    data.sort((a, b) => a.x.compareTo(b.x));
-
-    final base = data.first.x;
-
-    return data.map((p) {
-      return FlSpot(
-        (p.x - base) / 60000, // minutes like HA UI
-        p.y,
+        p.time.millisecondsSinceEpoch.toDouble(),
+        p.value,
       );
     }).toList();
+
+    print("POINTS: ${points.length}");
+    print("SPOTS: ${spots.length}");
+
+    return _ChartData(spots, base);
   }
 
-  double _minY(List<FlSpot> spots) {
-    final min = spots.map((e) => e.y).reduce((a, b) => a < b ? a : b);
-    return min - 0.5;
-  }
-
-  double _maxY(List<FlSpot> spots) {
-    final max = spots.map((e) => e.y).reduce((a, b) => a > b ? a : b);
-    return max + 0.5;
-  }
-
+  // =========================
+  // CHART
+  // =========================
   Widget chart(String entityId) {
-    return SizedBox(
-      height: 280,
-      child: FutureBuilder<List<FlSpot>>(
-        future: fetchData(entityId),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return FutureBuilder<_ChartData>(
+      future: fetchData(entityId),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-          final spots = snapshot.data ?? [];
+        final spots = snapshot.data!.spots;
 
-          if (spots.isEmpty) {
-            return const Center(child: Text("Brak danych"));
-          }
+        if (spots.isEmpty) {
+          return const Center(child: Text("Brak danych"));
+        }
 
-          final start = DateTime.now().subtract(
-            Duration(minutes: spots.last.x.toInt()),
-          );
+        final sorted = [...spots]..sort((a, b) => a.x.compareTo(b.x));
 
-          return LineChart(
-            LineChartData(
-              gridData: const FlGridData(show: true),
-              minX: 0,
-              maxX: spots.last.x,
-              minY: _minY(spots),
-              maxY: _maxY(spots),
+        return LineChart(
+          LineChartData(
+            minX: sorted.first.x,
+            maxX: sorted.last.x,
+            gridData: const FlGridData(show: true),
 
-              titlesData: FlTitlesData(
-                topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    interval: range == "24h" ? 180 : 1440,
-                    getTitlesWidget: (value, meta) {
-                      final dt = start.add(
-                        Duration(minutes: value.toInt()),
-                      );
+            titlesData: FlTitlesData(
+              topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 28,
+                  interval: (sorted.last.x - sorted.first.x) / 6,
+                  getTitlesWidget: (value, meta) {
+                    final dt =
+                        DateTime.fromMillisecondsSinceEpoch(value.toInt());
 
-                      if (range == "24h") {
-                        return Text(
-                          "${dt.hour}:00",
-                          style: const TextStyle(fontSize: 10),
-                        );
-                      }
+                    if (range == "24h") {
+                      return Text("${dt.hour}:00",
+                          style: const TextStyle(fontSize: 10));
+                    }
 
-                      const days = ["Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"];
+                    const days = ["Pn", "Wt", "Śr", "Cz", "Pt", "Sb", "Nd"];
 
-                      return Text(
-                        days[dt.weekday - 1],
-                        style: const TextStyle(fontSize: 10),
-                      );
-                    },
-                  ),
-                ),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (value, meta) {
-                      return Text("${value.toStringAsFixed(1)} kg");
-                    },
-                  ),
+                    return Text(
+                      days[dt.weekday - 1],
+                      style: const TextStyle(fontSize: 10),
+                    );
+                  },
                 ),
               ),
-
-              lineBarsData: [
-                LineChartBarData(
-                  spots: spots,
-                  isCurved: true,
-                  barWidth: 2,
-                  dotData: const FlDotData(show: false),
-                ),
-              ],
+              leftTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: true),
+              ),
             ),
-          );
-        },
-      ),
+
+            lineBarsData: [
+              LineChartBarData(
+                spots: sorted,
+                isCurved: true,
+                barWidth: 2,
+                dotData: const FlDotData(show: false),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -233,9 +194,7 @@ class _HiveDetailViewState extends State<HiveDetailView> {
     final entity = weightMap[hiveName];
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text("🐝 $hiveName"),
-      ),
+      appBar: AppBar(title: Text("🐝 $hiveName")),
       body: Column(
         children: [
           Row(
@@ -252,7 +211,7 @@ class _HiveDetailViewState extends State<HiveDetailView> {
           ),
           Expanded(
             child: entity == null
-                ? const Center(child: Text("Brak konfiguracji ula"))
+                ? const Center(child: Text("Brak konfiguracji"))
                 : Padding(
                     padding: const EdgeInsets.all(12),
                     child: chart(entity),
@@ -262,4 +221,21 @@ class _HiveDetailViewState extends State<HiveDetailView> {
       ),
     );
   }
+}
+
+// =========================
+// MODELS
+// =========================
+class _ChartData {
+  final List<FlSpot> spots;
+  final DateTime baseTime;
+
+  _ChartData(this.spots, this.baseTime);
+}
+
+class _Point {
+  final DateTime time;
+  final double value;
+
+  _Point(this.time, this.value);
 }
