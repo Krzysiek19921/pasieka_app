@@ -157,16 +157,16 @@ class HaService {
         delta8hEntity: "sensor.ul6_8h_delta",
         delta24hEntity: "sensor.ul6_24h_delta",
 
-        tempEntity: "sensor.waga_ul_6_temperatura_ula_6",
-        humidityEntity: "sensor.waga_ul_6_wilgotnosc_ula_6",
+        tempEntity: "sensor.waga_ul_6_temperatura_ula",
+        humidityEntity: "sensor.waga_ul_6_wilgotnosc_ula",
         pressureEntity: "sensor.waga_ul_6_cisnienie_ula_6",
 
         weight: _get(data, "sensor.waga_ul_6_waga_ula"),
         delta8h: _get(data, "sensor.ul6_8h_delta"),
         delta24h: _get(data, "sensor.ul6_24h_delta"),
 
-        temp: _get(data, "sensor.waga_ul_6_temperatura_ula_6"),
-        humidity: _get(data, "sensor.waga_ul_6_wilgotnosc_ula_6"),
+        temp: _get(data, "sensor.waga_ul_6_temperatura_ula"),
+        humidity: _get(data, "sensor.waga_ul_6_wilgotnosc_ula"),
         pressure: _get(data, "sensor.waga_ul_6_cisnienie_ula_6"),
       ),
     ];
